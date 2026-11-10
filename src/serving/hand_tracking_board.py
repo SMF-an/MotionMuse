@@ -12,8 +12,8 @@ import cv2
 import mediapipe as mp
 import numpy as np
 
-from board_geometry import BoardCalibration, BoardGeometry, Point
-from board_tracker import BoardTracker
+from serving.board_geometry import BoardCalibration, BoardGeometry, Point
+from serving.board_tracker import BoardTracker
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 MODEL_PATH = PROJECT_ROOT / "models" / "hand_landmarker.task"

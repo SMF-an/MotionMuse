@@ -1,10 +1,11 @@
 [project]
 name = "motionmuse"
 version = "0.1.0"
-description = "ArUco-tracked virtual guitar with MediaPipe hand interaction"
+description = "ArUco and markerless virtual guitar with MediaPipe hand interaction"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "mediapipe>=1.0.1",
     "opencv-python>=5.0.0.93",
+    "ultralytics>=8.4.208",
 ]

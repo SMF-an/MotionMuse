@@ -17,3 +17,11 @@ assets/
 
 # Config
 config/
+
+# Captured and generated training datasets
+data/raw/
+data/frames/
+data/exports/
+data/yolo/
+data/yolo_labeled/
+data/yolo_sessions/

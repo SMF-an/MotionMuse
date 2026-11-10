@@ -61,7 +61,7 @@ def _valid_quad(points: np.ndarray, min_area_px: float) -> bool:
 
 
 class ArucoBoardTracker:
-    """Stateless-per-frame detection with a short, explicit occlusion hold."""
+    """Four-point homography with 3/2-marker degradation and occlusion hold."""
 
     def __init__(self, hold_s: float = 0.25, min_area_px: float = 400.0) -> None:
         if not hasattr(cv2, "aruco"):
@@ -73,10 +73,12 @@ class ArucoBoardTracker:
         self.hold_s = hold_s
         self.min_area_px = min_area_px
         self._last_corners: np.ndarray | None = None
+        self._last_centers: dict[int, np.ndarray] = {}
         self._last_valid_at: float | None = None
 
     def reset(self) -> None:
         self._last_corners = None
+        self._last_centers = {}
         self._last_valid_at = None
 
     def process(self, frame_bgr: np.ndarray) -> BoardPose:
@@ -96,7 +98,8 @@ class ArucoBoardTracker:
         if any(counts[marker_id] > 1 for marker_id in REQUIRED_IDS):
             self.reset()
             return BoardPose("lost", "duplicate_required_ids", None, None, visible, elapsed())
-        if all(counts[marker_id] == 1 for marker_id in REQUIRED_IDS):
+        present = [marker_id for marker_id in REQUIRED_IDS if counts[marker_id] == 1]
+        if len(present) == 4:
             ordered = np.float32([centres[marker_id] for marker_id in REQUIRED_IDS])
             if not _valid_quad(ordered, self.min_area_px):
                 self.reset()
@@ -107,8 +110,30 @@ class ArucoBoardTracker:
                 return BoardPose("lost", "invalid_homography", None, None, visible, elapsed())
             # UI polygon order is TL, TR, BR, BL; marker-ID order is 0, 1, 2, 3.
             self._last_corners = ordered[list(PERIMETER)]
+            self._last_centers = {marker_id: centres[marker_id] for marker_id in REQUIRED_IDS}
             self._last_valid_at = now
             return BoardPose("valid", None, self._last_corners.tolist(), 0.0, visible, elapsed())
+        if len(present) == 3:
+            source = np.float32([BOARD_UV[marker_id] for marker_id in present])
+            target = np.float32([centres[marker_id] for marker_id in present])
+            affine = cv2.getAffineTransform(source, target)
+            corners = cv2.transform(BOARD_UV[list(PERIMETER)].reshape(1, 4, 2), affine)[0]
+            if _valid_quad(corners[list(PERIMETER)], self.min_area_px):
+                self._last_corners = corners
+                self._last_centers.update({marker_id: centres[marker_id] for marker_id in present})
+                self._last_valid_at = now
+                return BoardPose("degraded", "three_markers_affine", corners.tolist(), 0.0, visible, elapsed())
+        if len(present) == 2 and self._last_corners is not None and all(marker_id in self._last_centers for marker_id in present):
+            source = np.float32([self._last_centers[marker_id] for marker_id in present])
+            target = np.float32([centres[marker_id] for marker_id in present])
+            affine, _ = cv2.estimateAffinePartial2D(source, target, method=cv2.LMEDS)
+            if affine is not None:
+                corners = cv2.transform(self._last_corners.reshape(1, 4, 2), affine)[0]
+                if _valid_quad(corners[list(PERIMETER)], self.min_area_px):
+                    self._last_corners = corners
+                    self._last_centers.update({marker_id: centres[marker_id] for marker_id in present})
+                    self._last_valid_at = now
+                    return BoardPose("degraded", "two_markers_similarity", corners.tolist(), 0.0, visible, elapsed())
         if self._last_corners is not None and self._last_valid_at is not None:
             age = now - self._last_valid_at
             if age <= self.hold_s:
